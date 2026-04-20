@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Ambient Clock</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0a1a;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+#app{width:100%;max-width:680px;min-height:100vh;position:relative;overflow:hidden;display:flex;flex-direction:column}
+@media(min-width:700px){#app{min-height:680px;border-radius:16px}}
+canvas#bg{position:absolute;inset:0;z-index:0;width:100%;height:100%}
+canvas#fx{position:absolute;inset:0;z-index:1;width:100%;pointer-events:none}
+.z2{position:relative;z-index:2}
+.glass{background:rgba(255,255,255,0.13);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:0.5px solid rgba(255,255,255,0.22);border-radius:12px}
+
+/* TOP BAR */
+#top-bar{display:flex;align-items:center;gap:8px;padding:10px 14px}
+#api-row{display:flex;gap:6px;flex:1;align-items:center}
+#api-input{flex:1;padding:5px 10px;border-radius:20px;border:0.5px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.1);color:#fff;font-size:11px;font-family:inherit;outline:none}
+#api-input::placeholder{color:rgba(255,255,255,0.4)}
+#fetch-btn{padding:5px 11px;border-radius:20px;border:0.5px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.18);color:#fff;font-size:11px;cursor:pointer;white-space:nowrap;font-family:inherit}
+#fetch-btn:hover{background:rgba(255,255,255,0.28)}
+#weather-pill{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;color:rgba(255,255,255,0.9);cursor:pointer;white-space:nowrap;flex-shrink:0}
+
+/* MAIN */
+#main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:10px 16px 8px}
+#week-strip{display:flex;gap:5px;width:100%;justify-content:center;margin-bottom:4px}
+.day-chip{flex:1;max-width:76px;text-align:center;padding:7px 4px;border-radius:10px;cursor:pointer;transition:background .2s}
+.day-chip:hover:not(.today){background:rgba(255,255,255,0.1)}
+.day-chip.today{background:rgba(255,255,255,0.22);border:0.5px solid rgba(255,255,255,0.35)}
+.dc-name{font-size:9px;color:rgba(255,255,255,0.55);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+.dc-num{font-size:16px;font-weight:500;color:#fff}
+.day-chip.today .dc-name{color:rgba(255,255,255,0.8)}
+.day-dot{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,0.4);margin:3px auto 0}
+.day-chip.today .day-dot{background:rgba(255,255,255,0.8)}
+
+#clock-wrap{position:relative;cursor:pointer}
+#clock{font-size:80px;font-weight:300;color:#fff;letter-spacing:-3px;line-height:1;font-variant-numeric:tabular-nums;text-shadow:0 1px 30px rgba(0,0,0,0.25);transition:opacity .2s}
+#clock:hover{opacity:.8}
+#clock-hint{position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);font-size:9px;color:rgba(255,255,255,0.35);white-space:nowrap;opacity:0;transition:opacity .2s}
+#clock-wrap:hover #clock-hint{opacity:1}
+
+#date-lbl{font-size:13px;color:rgba(255,255,255,0.7);cursor:pointer}
+#date-lbl:hover{color:rgba(255,255,255,0.95)}
+
+#details-row{display:flex;gap:8px;margin-top:6px}
+.detail-card{padding:7px 12px;border-radius:10px;text-align:center}
+.dval{font-size:15px;font-weight:500;color:#fff}
+.dlbl{font-size:9px;color:rgba(255,255,255,0.5);margin-top:2px}
+
+#status-row{display:flex;align-items:center;gap:7px;font-size:11px;color:rgba(255,255,255,0.45);margin-top:4px}
+.dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,0.5);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:.4}50%{opacity:1}}
+
+/* BOTTOM */
+#bottom{padding:10px 14px;display:flex;gap:10px;align-items:flex-end;position:relative;z-index:2}
+#alarm-col{flex:1}
+.atitle{font-size:9px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+#alarm-list{display:flex;flex-direction:column;gap:4px}
+.aitm{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-radius:8px}
+.atm{font-size:13px;font-weight:500;color:#fff;font-variant-numeric:tabular-nums}
+.albl{font-size:9px;color:rgba(255,255,255,0.5)}
+.tog{width:28px;height:16px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.25);background:rgba(255,255,255,0.1);cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
+.tog.on{background:rgba(100,220,140,0.55)}
+.tog::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:left .2s}
+.tog.on::after{left:14px}
+
+/* CONTROLS */
+#demo-bar{display:flex;gap:5px;justify-content:center;padding:5px 14px 0;position:relative;z-index:2;flex-wrap:wrap}
+.demo-btn{padding:3px 9px;border-radius:12px;border:0.5px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.15);color:rgba(255,255,255,0.65);font-size:10px;cursor:pointer;font-family:inherit}
+.demo-btn:hover{background:rgba(255,255,255,0.15);color:#fff}
+#ctrl-row{display:flex;gap:6px;justify-content:center;padding:8px 14px 14px;position:relative;z-index:2;flex-wrap:wrap}
+.cb{padding:5px 12px;border-radius:16px;border:0.5px solid rgba(255,255,255,0.22);background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.85);font-size:11px;cursor:pointer;font-family:inherit;transition:background .2s}
+.cb:hover{background:rgba(255,255,255,0.2)}
+.cb.on{background:rgba(255,255,255,0.25);color:#fff}
+
+/* CALENDAR PANEL */
+#cal-panel{display:none;position:absolute;top:52px;left:14px;right:14px;padding:14px;border-radius:14px;z-index:20;animation:sd .25s ease}
+#cal-panel.vis{display:block}
+@keyframes sd{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+#cal-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+#cal-month-lbl{font-size:13px;font-weight:500;color:rgba(255,255,255,0.9)}
+#cal-nav{display:flex;gap:6px}
+.cnb{background:rgba(255,255,255,0.1);border:0.5px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.8);border-radius:6px;padding:2px 8px;cursor:pointer;font-size:12px;font-family:inherit}
+#cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.ch{font-size:9px;color:rgba(255,255,255,0.45);text-align:center;padding:2px 0}
+.cd{font-size:11px;color:rgba(255,255,255,0.72);text-align:center;padding:5px 2px;border-radius:5px;cursor:pointer}
+.cd:hover{background:rgba(255,255,255,0.1)}
+.cd.today{background:rgba(255,255,255,0.26);color:#fff;font-weight:500}
+.cd.empty{pointer-events:none}
+
+/* DATETIME EDITOR MODAL */
+#dt-overlay{display:none;position:absolute;inset:0;z-index:50;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;border-radius:16px}
+#dt-overlay.vis{display:flex}
+#dt-modal{padding:22px 24px;border-radius:16px;min-width:280px;max-width:340px;width:90%}
+#dt-modal h3{font-size:14px;font-weight:500;color:#fff;margin-bottom:18px;text-align:center;letter-spacing:.3px}
+.dt-section{margin-bottom:16px}
+.dt-label{font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.dt-controls{display:flex;align-items:center;justify-content:center;gap:0}
+.dt-unit{display:flex;flex-direction:column;align-items:center;gap:4px}
+.dt-up,.dt-down{width:36px;height:28px;border:0.5px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.8);border-radius:6px;cursor:pointer;font-size:14px;font-family:inherit;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.dt-up:hover,.dt-down:hover{background:rgba(255,255,255,0.22)}
+.dt-val{font-size:28px;font-weight:300;color:#fff;font-variant-numeric:tabular-nums;min-width:52px;text-align:center;padding:4px 0}
+.dt-sep{font-size:26px;color:rgba(255,255,255,0.4);padding:0 2px;align-self:center;margin-bottom:4px}
+.dt-row{display:flex;gap:8px;margin-top:18px}
+.dt-btn{flex:1;padding:9px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-family:inherit;font-weight:500}
+.dt-save{background:rgba(100,200,140,0.5);color:#fff;border:0.5px solid rgba(100,200,140,0.6)}
+.dt-save:hover{background:rgba(100,200,140,0.7)}
+.dt-reset{background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.7);border:0.5px solid rgba(255,255,255,0.2)}
+.dt-reset:hover{background:rgba(255,255,255,0.18)}
+.dt-cancel{background:transparent;color:rgba(255,255,255,0.5);border:0.5px solid rgba(255,255,255,0.15)}
+.dt-cancel:hover{background:rgba(255,255,255,0.08)}
+.dt-tabs{display:flex;gap:6px;margin-bottom:18px}
+.dt-tab{flex:1;padding:6px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.18);background:transparent;color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;font-family:inherit;transition:all .2s}
+.dt-tab.active{background:rgba(255,255,255,0.2);color:#fff;border-color:rgba(255,255,255,0.35)}
+
+/* FOCUS */
+#focus-ov{display:none;position:absolute;inset:0;z-index:30;background:rgba(0,0,0,0.84);align-items:center;justify-content:center;flex-direction:column;gap:10px;border-radius:16px}
+#focus-ov.vis{display:flex}
+#fclock{font-size:96px;font-weight:300;color:#fff;letter-spacing:-4px;font-variant-numeric:tabular-nums}
+#fdate{font-size:14px;color:rgba(255,255,255,0.5)}
+
+/* TOAST */
+#toast{position:absolute;top:56px;left:50%;transform:translateX(-50%);padding:6px 14px;border-radius:18px;background:rgba(0,0,0,0.6);color:#fff;font-size:11px;z-index:60;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+#toast.show{opacity:1}
+
+/* ADD ALARM */
+#add-alarm-form{display:none;position:absolute;bottom:110px;left:50%;transform:translateX(-50%);padding:16px;border-radius:14px;z-index:20;min-width:240px}
+#add-alarm-form.vis{display:block}
+#add-alarm-form input{width:100%;margin-bottom:8px;padding:7px 10px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.1);color:#fff;font-size:13px;font-family:inherit}
+#add-alarm-form input::placeholder{color:rgba(255,255,255,0.4)}
+.af-row{display:flex;gap:6px}
+.af-btn{flex:1;padding:8px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.2);font-size:12px;font-family:inherit;cursor:pointer}
+.af-save{background:rgba(100,220,140,0.4);color:#fff}
+.af-cancel{background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.7)}
+</style>
+</head>
+<body>
+<div id="app">
+<canvas id="bg"></canvas>
+<canvas id="fx"></canvas>
+
+<!-- TOP BAR -->
+<div class="z2 glass" id="top-bar">
+  <div id="api-row">
+    <input id="api-input" placeholder="API Key OpenWeatherMap..." type="password"/>
+    <button id="fetch-btn" onclick="fetchWeather()">Clima real</button>
+  </div>
+  <div class="glass" id="weather-pill">
+    <span id="wicon">⛅</span>
+    <span id="wtemp">18°C</span>
+    <span id="wdesc" style="color:rgba(255,255,255,0.5);font-size:10px">Parcial</span>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main" class="z2">
+  <div id="week-strip"></div>
+
+  <div id="clock-wrap" onclick="openDtEditor('time')" title="Clic para editar hora">
+    <div id="clock">--:--:--</div>
+    <div id="clock-hint">✏ editar hora</div>
+  </div>
+
+  <div id="date-lbl" onclick="openDtEditor('date')" title="Clic para editar fecha"></div>
+
+  <div id="details-row">
+    <div class="detail-card glass"><div class="dval" id="d-feels">--</div><div class="dlbl">Sensación</div></div>
+    <div class="detail-card glass"><div class="dval" id="d-hum">--</div><div class="dlbl">Humedad</div></div>
+    <div class="detail-card glass"><div class="dval" id="d-wind">--</div><div class="dlbl">Viento km/h</div></div>
+    <div class="detail-card glass"><div class="dval" id="d-city">Bogotá</div><div class="dlbl">Ciudad</div></div>
+  </div>
+  <div id="status-row"><div class="dot"></div><span id="status-txt">Clic en la hora o fecha para editar · usa demo para previsualizar clima</span></div>
+</div>
+
+<!-- CALENDAR PANEL -->
+<div id="cal-panel" class="glass">
+  <div id="cal-hdr">
+    <span id="cal-month-lbl"></span>
+    <div id="cal-nav">
+      <button class="cnb" id="cal-prev">‹</button>
+      <button class="cnb" id="cal-next">›</button>
+      <button class="cnb" onclick="document.getElementById('cal-panel').classList.remove('vis');document.getElementById('btn-cal').classList.remove('on')">✕</button>
+    </div>
+  </div>
+  <div id="cal-grid"></div>
+</div>
+
+<!-- BOTTOM ALARMS -->
+<div id="bottom">
+  <div id="alarm-col">
+    <div class="atitle">Alarmas</div>
+    <div id="alarm-list"></div>
+  </div>
+</div>
+
+<!-- ADD ALARM -->
+<div id="add-alarm-form" class="glass">
+  <input type="time" id="alarm-time-in"/>
+  <input type="text" id="alarm-label-in" placeholder="Etiqueta (ej: Reunión)"/>
+  <div class="af-row">
+    <button class="af-btn af-cancel" onclick="closeAlarmForm()">Cancelar</button>
+    <button class="af-btn af-save" onclick="saveAlarm()">Guardar</button>
+  </div>
+</div>
+
+<!-- DEMO BAR -->
+<div id="demo-bar">
+  <span style="font-size:9px;color:rgba(255,255,255,0.3);padding:3px 2px 0">Demo clima:</span>
+  <button class="demo-btn" onclick="applyWeather({condition:'clear',temp:24,feels:22,humidity:55,wind:12,desc:'Despejado',city:'Bogotá'})">☀ Despejado</button>
+  <button class="demo-btn" onclick="applyWeather({condition:'clouds',temp:17,feels:15,humidity:75,wind:8,desc:'Nublado',city:'Bogotá'})">☁ Nublado</button>
+  <button class="demo-btn" onclick="applyWeather({condition:'rain',temp:13,feels:11,humidity:90,wind:15,desc:'Lluvia',city:'Bogotá'})">🌧 Lluvia</button>
+  <button class="demo-btn" onclick="applyWeather({condition:'thunderstorm',temp:11,feels:9,humidity:95,wind:25,desc:'Tormenta',city:'Bogotá'})">⛈ Tormenta</button>
+  <button class="demo-btn" onclick="applyWeather({condition:'mist',temp:15,feels:14,humidity:88,wind:5,desc:'Niebla',city:'Bogotá'})">🌫 Niebla</button>
+  <button class="demo-btn" onclick="applyWeather({condition:'snow',temp:2,feels:0,humidity:80,wind:10,desc:'Nieve',city:'Bogotá'})">❄ Nieve</button>
+</div>
+
+<!-- CONTROLS -->
+<div id="ctrl-row">
+  <button class="cb" onclick="toggleFocus()" id="btn-focus">Modo foco</button>
+  <button class="cb on" onclick="toggleFx()" id="btn-fx">Efectos: ON</button>
+  <button class="cb" onclick="locateMe()">Mi ubicación</button>
+  <button class="cb" onclick="toggleCal()" id="btn-cal">Calendario</button>
+  <button class="cb" onclick="toggleAlarmForm()" id="btn-add">+ Alarma</button>
+</div>
+
+<!-- DATETIME EDITOR MODAL -->
+<div id="dt-overlay">
+  <div id="dt-modal" class="glass">
+    <h3>Editar fecha y hora</h3>
+    <div class="dt-tabs">
+      <button class="dt-tab active" id="tab-time" onclick="switchTab('time')">⏰ Hora</button>
+      <button class="dt-tab" id="tab-date" onclick="switchTab('date')">📅 Fecha</button>
+    </div>
+
+    <!-- TIME TAB -->
+    <div id="pane-time">
+      <div class="dt-label">Hora actual</div>
+      <div class="dt-controls">
+        <div class="dt-unit">
+          <button class="dt-up" onclick="adj('h',1)">▲</button>
+          <div class="dt-val" id="e-h">00</div>
+          <button class="dt-down" onclick="adj('h',-1)">▼</button>
+        </div>
+        <div class="dt-sep">:</div>
+        <div class="dt-unit">
+          <button class="dt-up" onclick="adj('m',1)">▲</button>
+          <div class="dt-val" id="e-m">00</div>
+          <button class="dt-down" onclick="adj('m',-1)">▼</button>
+        </div>
+        <div class="dt-sep">:</div>
+        <div class="dt-unit">
+          <button class="dt-up" onclick="adj('s',1)">▲</button>
+          <div class="dt-val" id="e-s">00</div>
+          <button class="dt-down" onclick="adj('s',-1)">▼</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DATE TAB -->
+    <div id="pane-date" style="display:none">
+      <div class="dt-label">Mes y año</div>
+      <div class="dt-controls">
+        <div class="dt-unit">
+          <button class="dt-up" onclick="adj('mo',1)">▲</button>
+          <div class="dt-val" id="e-mo" style="font-size:18px;min-width:80px">Ene</div>
+          <button class="dt-down" onclick="adj('mo',-1)">▼</button>
+        </div>
+        <div class="dt-sep" style="font-size:20px;color:rgba(255,255,255,0.2)">/</div>
+        <div class="dt-unit">
+          <button class="dt-up" onclick="adj('yr',1)">▲</button>
+          <div class="dt-val" id="e-yr" style="font-size:22px;min-width:72px">2026</div>
+          <button class="dt-down" onclick="adj('yr',-1)">▼</button>
+        </div>
+      </div>
+      <div style="margin-top:14px">
+        <div class="dt-label">Día</div>
+        <div class="dt-controls">
+          <div class="dt-unit">
+            <button class="dt-up" onclick="adj('d',1)">▲</button>
+            <div class="dt-val" id="e-d">01</div>
+            <button class="dt-down" onclick="adj('d',-1)">▼</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dt-row">
+      <button class="dt-btn dt-cancel" onclick="closeDtEditor()">Cancelar</button>
+      <button class="dt-btn dt-reset" onclick="resetDateTime()">Real</button>
+      <button class="dt-btn dt-save" onclick="applyDateTime()">Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- FOCUS OVERLAY -->
+<div id="focus-ov">
+  <div id="fclock"></div>
+  <div id="fdate"></div>
+  <button class="cb" style="margin-top:18px" onclick="toggleFocus()">Salir del foco</button>
+</div>
+
+<div id="toast"></div>
+</div>
+
+<script>
+// ─── STATE ───────────────────────────────────────────────
+const alarms=[{id:1,time:'07:00',label:'Despertar',on:true},{id:2,time:'13:00',label:'Almuerzo',on:true},{id:3,time:'19:00',label:'Ejercicio',on:false}];
+let fxOn=true,focusMode=false,calViewDate=new Date();
+let weather={condition:'partly_cloudy',temp:18,feels:16,humidity:72,wind:9,desc:'Parcial',city:'Bogotá'};
+let particles=[];
+// Override date/time (null = use real clock)
+let fakeDate=null; // Date object when overridden
+let edit={h:0,m:0,s:0,d:1,mo:0,yr:2026};
+const MONTHS_SHORT=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const MONTHS_LONG=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+// ─── TIME OF DAY ─────────────────────────────────────────
+function getNow(){
+  if(fakeDate) return new Date(fakeDate);
+  return new Date();
+}
+const TOD=()=>{const h=getNow().getHours();return h<5?'night':h<8?'dawn':h<12?'morning':h<17?'afternoon':h<20?'dusk':'night'};
+
+// ─── BACKGROUND PALETTES ─────────────────────────────────
+const PALETTES={
+  clear:{dawn:['#FF7043','#FFA726','#FFD54F','#80DEEA','#4FC3F7'],morning:['#81D4FA','#4FC3F7','#29B6F6','#0288D1','#01579B'],afternoon:['#29B6F6','#0288D1','#01579B','#0D47A1','#1A237E'],dusk:['#FF6F00','#F57C00','#FF8F00','#E91E63','#880E4F'],night:['#0D0D2B','#111133','#0A1628','#0D2137','#0A0A1E']},
+  clouds:{dawn:['#90A4AE','#78909C','#607D8B','#546E7A','#455A64'],morning:['#90A4AE','#78909C','#607D8B','#546E7A','#37474F'],afternoon:['#607D8B','#546E7A','#455A64','#37474F','#263238'],dusk:['#78543A','#6D4C41','#5D4037','#4E342E','#3E2723'],night:['#101214','#0E1012','#0C0E10','#0A0C0E','#08080A']},
+  rain:{dawn:['#546E7A','#455A64','#37474F','#263238','#1C2A30'],morning:['#455A64','#37474F','#263238','#1A252A','#10181E'],afternoon:['#263238','#1A252A','#10181E','#0A1018','#060C10'],dusk:['#2C2030','#22182A','#181220','#100C18','#080610'],night:['#060810','#040608','#030506','#020404','#010202']},
+  thunderstorm:{dawn:['#1A1A2E','#16213E','#0F3460','#1A1A2E','#0D0D1A'],morning:['#0D0D1A','#0A0A14','#08080E','#060608','#040404'],afternoon:['#0A0A14','#080810','#06060C','#040408','#020204'],dusk:['#1A0A1A','#150815','#100610','#0C040C','#080208'],night:['#050508','#040406','#030304','#020202','#010101']},
+  mist:{dawn:['#B0BEC5','#90A4AE','#78909C','#607D8B','#546E7A'],morning:['#CFD8DC','#B0BEC5','#90A4AE','#78909C','#607D8B'],afternoon:['#90A4AE','#78909C','#607D8B','#546E7A','#455A64'],dusk:['#8D6E63','#795548','#6D4C41','#5D4037','#4E342E'],night:['#1A1A20','#141418','#0E0E12','#08080C','#040406']},
+  snow:{dawn:['#E0F7FA','#B2EBF2','#80DEEA','#4DD0E1','#26C6DA'],morning:['#F5F5F5','#EEEEEE','#E0E0E0','#BDBDBD','#9E9E9E'],afternoon:['#E3F2FD','#BBDEFB','#90CAF9','#64B5F6','#42A5F5'],dusk:['#E8EAF6','#C5CAE9','#9FA8DA','#7986CB','#5C6BC0'],night:['#1A1A2E','#16213E','#0F3460','#0D2137','#0A1628']},
+  partly_cloudy:{dawn:['#D4956A','#C9896A','#B8806A','#A07080','#7090A8'],morning:['#A8C8E8','#88B8D8','#6898C0','#5080A8','#384870'],afternoon:['#5878A0','#486090','#384878','#283060','#182048'],dusk:['#C06838','#B86040','#A05840','#885040','#704038'],night:['#0E1430','#121838','#161C40','#0A1228','#060C20']}
+};
+const ICONS={clear:'☀',clouds:'☁',rain:'🌧',thunderstorm:'⛈',mist:'🌫',snow:'❄',partly_cloudy:'⛅'};
+
+// ─── DRAW BACKGROUND ─────────────────────────────────────
+function drawBg(){
+  const c=document.getElementById('bg');
+  const ctx=c.getContext('2d');
+  const w=c.width=c.offsetWidth,h=c.height=c.offsetHeight;
+  if(!w||!h) return;
+  const pal=PALETTES[weather.condition]||PALETTES.partly_cloudy;
+  const cols=pal[TOD()]||pal.morning;
+  const g=ctx.createLinearGradient(0,0,0,h);
+  cols.forEach((c2,i)=>g.addColorStop(i/(cols.length-1),c2));
+  ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+  const tod=TOD();
+  if(tod==='night'||tod==='dawn'){
+    for(let i=0;i<80;i++){
+      const x=Math.random()*w,y=Math.random()*h*.65,r=Math.random()*1.8+.3;
+      ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
+      ctx.fillStyle=`rgba(255,255,255,${Math.random()*.9+.1})`;ctx.fill();
+    }
+  }
+  if((weather.condition==='clear'||weather.condition==='partly_cloudy')&&tod!=='night'){
+    const sx=tod==='morning'?w*.15:tod==='dusk'?w*.85:w*.72,sy=h*.12;
+    const sg=ctx.createRadialGradient(sx,sy,0,sx,sy,80);
+    sg.addColorStop(0,'rgba(255,245,200,0.95)');sg.addColorStop(.35,'rgba(255,210,100,0.35)');sg.addColorStop(1,'rgba(255,180,0,0)');
+    ctx.fillStyle=sg;ctx.fillRect(0,0,w,h);
+  }
+  if(['clouds','partly_cloudy','mist'].includes(weather.condition)){
+    const alpha=weather.condition==='mist'?.22:.1;
+    ctx.fillStyle=`rgba(255,255,255,${alpha})`;
+    [[w*.15,h*.12,100,38],[w*.55,h*.08,140,45],[w*.82,h*.18,80,30],[w*.38,h*.22,90,32]].forEach(([cx,cy,rw,rh])=>{
+      ctx.beginPath();ctx.ellipse(cx,cy,rw,rh,0,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.ellipse(cx-rw*.3,cy+rh*.3,rw*.6,rh*.7,0,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.ellipse(cx+rw*.35,cy+rh*.25,rw*.5,rh*.65,0,0,Math.PI*2);ctx.fill();
+    });
+  }
+  if(weather.condition==='snow'&&tod!=='night'){
+    ctx.fillStyle='rgba(255,255,255,0.18)';
+    [[w*.2,h*.1,120,40],[w*.7,h*.07,100,35],[w*.45,h*.18,80,30]].forEach(([cx,cy,rw,rh])=>{
+      ctx.beginPath();ctx.ellipse(cx,cy,rw,rh,0,0,Math.PI*2);ctx.fill();
+    });
+  }
+}
+
+// ─── PARTICLES ───────────────────────────────────────────
+function initParticles(){
+  particles=[];
+  const c=document.getElementById('fx');
+  const w=c.width=c.offsetWidth,h=c.height=c.offsetHeight;
+  if(!w||!h) return;
+  const cond=weather.condition;
+  if(cond==='rain'||cond==='thunderstorm'){
+    for(let i=0;i<130;i++) particles.push({x:Math.random()*w,y:Math.random()*h,vx:-1.5,vy:Math.random()*8+6,len:Math.random()*12+6,alpha:Math.random()*.5+.25,lw:Math.random()*.8+.3});
+  } else if(cond==='snow'){
+    for(let i=0;i<80;i++) particles.push({x:Math.random()*w,y:Math.random()*h,vx:Math.random()*.6-.3,vy:Math.random()*1.5+.5,r:Math.random()*3+1,alpha:Math.random()*.7+.2,drift:Math.random()*Math.PI*2});
+  } else if(cond==='mist'){
+    for(let i=0;i<6;i++) particles.push({x:Math.random()*w,y:Math.random()*h*.6+h*.2,w:Math.random()*200+100,h:Math.random()*60+30,vx:.15,alpha:.04+Math.random()*.06});
+  }
+}
+
+function animateFx(){
+  requestAnimationFrame(animateFx);
+  const c=document.getElementById('fx');
+  const ctx=c.getContext('2d');
+  const w=c.width,h=c.height;
+  if(!w||!h) return;
+  ctx.clearRect(0,0,w,h);
+  if(!fxOn) return;
+  const cond=weather.condition;
+  if(cond==='thunderstorm'&&Math.random()<.004){
+    const lx=Math.random()*w;
+    ctx.strokeStyle='rgba(220,220,255,0.85)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(lx,0);
+    let cy=0,cx=lx;
+    while(cy<h*.7){cy+=Math.random()*40+20;cx+=Math.random()*40-20;ctx.lineTo(cx,cy);}
+    ctx.stroke();
+    ctx.strokeStyle='rgba(200,200,255,0.3)';ctx.lineWidth=8;ctx.stroke();
+  }
+  particles.forEach(p=>{
+    if(cond==='rain'||cond==='thunderstorm'){
+      ctx.strokeStyle=`rgba(180,210,240,${p.alpha})`;ctx.lineWidth=p.lw;
+      ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+p.vx*p.len/p.vy,p.y+p.len);ctx.stroke();
+      p.x+=p.vx;p.y+=p.vy;if(p.y>h){p.y=-20;p.x=Math.random()*w;}
+    } else if(cond==='snow'){
+      p.drift+=.01;p.x+=Math.sin(p.drift)*.4+p.vx;p.y+=p.vy;
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle=`rgba(255,255,255,${p.alpha})`;ctx.fill();
+      if(p.y>h){p.y=-10;p.x=Math.random()*w;}
+    } else if(cond==='mist'){
+      p.x+=p.vx;if(p.x>w+200) p.x=-200;
+      ctx.fillStyle=`rgba(255,255,255,${p.alpha})`;
+      ctx.beginPath();ctx.ellipse(p.x,p.y,p.w,p.h,0,0,Math.PI*2);ctx.fill();
+    }
+  });
+}
+
+// ─── CLOCK ───────────────────────────────────────────────
+function tick(){
+  if(fakeDate) fakeDate=new Date(fakeDate.getTime()+1000);
+  const now=getNow();
+  const ts=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  document.getElementById('clock').textContent=ts;
+  document.getElementById('fclock').textContent=ts;
+  const ds=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const dl=`${ds[now.getDay()]}, ${now.getDate()} de ${MONTHS_LONG[now.getMonth()]} ${now.getFullYear()}`;
+  document.getElementById('date-lbl').textContent=dl;
+  document.getElementById('fdate').textContent=dl;
+}
+
+// ─── DATETIME EDITOR ─────────────────────────────────────
+function openDtEditor(tab){
+  const now=getNow();
+  edit={h:now.getHours(),m:now.getMinutes(),s:now.getSeconds(),d:now.getDate(),mo:now.getMonth(),yr:now.getFullYear()};
+  refreshEdit();
+  switchTab(tab||'time');
+  document.getElementById('dt-overlay').classList.add('vis');
+}
+function closeDtEditor(){document.getElementById('dt-overlay').classList.remove('vis');}
+function switchTab(t){
+  document.getElementById('pane-time').style.display=t==='time'?'block':'none';
+  document.getElementById('pane-date').style.display=t==='date'?'block':'none';
+  document.getElementById('tab-time').classList.toggle('active',t==='time');
+  document.getElementById('tab-date').classList.toggle('active',t==='date');
+}
+function adj(field,delta){
+  if(field==='h'){edit.h=(edit.h+delta+24)%24;}
+  else if(field==='m'){edit.m=(edit.m+delta+60)%60;}
+  else if(field==='s'){edit.s=(edit.s+delta+60)%60;}
+  else if(field==='d'){
+    const dmax=new Date(edit.yr,edit.mo+1,0).getDate();
+    edit.d=Math.max(1,Math.min(dmax,edit.d+delta));
+  }
+  else if(field==='mo'){edit.mo=(edit.mo+delta+12)%12;}
+  else if(field==='yr'){edit.yr=Math.max(2000,Math.min(2099,edit.yr+delta));}
+  refreshEdit();
+}
+function refreshEdit(){
+  document.getElementById('e-h').textContent=String(edit.h).padStart(2,'0');
+  document.getElementById('e-m').textContent=String(edit.m).padStart(2,'0');
+  document.getElementById('e-s').textContent=String(edit.s).padStart(2,'0');
+  document.getElementById('e-d').textContent=String(edit.d).padStart(2,'0');
+  document.getElementById('e-mo').textContent=MONTHS_SHORT[edit.mo];
+  document.getElementById('e-yr').textContent=edit.yr;
+}
+function applyDateTime(){
+  fakeDate=new Date(edit.yr,edit.mo,edit.d,edit.h,edit.m,edit.s);
+  closeDtEditor();
+  tick();
+  drawBg();
+  buildWeekStrip();
+  showToast('Fecha y hora aplicadas');
+}
+function resetDateTime(){
+  fakeDate=null;
+  closeDtEditor();
+  tick();
+  drawBg();
+  buildWeekStrip();
+  showToast('Reloj restablecido al tiempo real');
+}
+
+// ─── WEEK STRIP ──────────────────────────────────────────
+function buildWeekStrip(){
+  const strip=document.getElementById('week-strip');
+  strip.innerHTML='';
+  const now=getNow();
+  const names=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const monday=new Date(now);monday.setDate(now.getDate()-((now.getDay()+6)%7));
+  for(let i=0;i<7;i++){
+    const d=new Date(monday);d.setDate(monday.getDate()+i);
+    const isToday=d.toDateString()===now.toDateString();
+    const chip=document.createElement('div');
+    chip.className='day-chip'+(isToday?' today':'');
+    chip.innerHTML=`<div class="dc-name">${names[d.getDay()]}</div><div class="dc-num">${d.getDate()}</div><div class="day-dot"></div>`;
+    chip.onclick=()=>{calViewDate=new Date(d);buildFullCal();document.getElementById('cal-panel').classList.add('vis');document.getElementById('btn-cal').classList.add('on');};
+    strip.appendChild(chip);
+  }
+}
+
+// ─── FULL CALENDAR ───────────────────────────────────────
+function buildFullCal(){
+  document.getElementById('cal-month-lbl').textContent=MONTHS_LONG[calViewDate.getMonth()]+' '+calViewDate.getFullYear();
+  const grid=document.getElementById('cal-grid');grid.innerHTML='';
+  ['L','M','X','J','V','S','D'].forEach(d=>{const el=document.createElement('div');el.className='ch';el.textContent=d;grid.appendChild(el);});
+  const first=new Date(calViewDate.getFullYear(),calViewDate.getMonth(),1);
+  let startDay=first.getDay();if(startDay===0) startDay=7;
+  for(let i=1;i<startDay;i++){const el=document.createElement('div');el.className='cd empty';grid.appendChild(el);}
+  const dim=new Date(calViewDate.getFullYear(),calViewDate.getMonth()+1,0).getDate();
+  const today=getNow();
+  for(let d=1;d<=dim;d++){
+    const el=document.createElement('div');el.className='cd';
+    if(d===today.getDate()&&calViewDate.getMonth()===today.getMonth()&&calViewDate.getFullYear()===today.getFullYear()) el.classList.add('today');
+    el.textContent=d;grid.appendChild(el);
+  }
+}
+function toggleCal(){
+  const p=document.getElementById('cal-panel');
+  const vis=p.classList.toggle('vis');
+  if(vis){calViewDate=new Date();buildFullCal();}
+  document.getElementById('btn-cal').classList.toggle('on',vis);
+}
+document.getElementById('cal-prev').onclick=()=>{calViewDate.setMonth(calViewDate.getMonth()-1);buildFullCal();};
+document.getElementById('cal-next').onclick=()=>{calViewDate.setMonth(calViewDate.getMonth()+1);buildFullCal();};
+
+// ─── WEATHER ─────────────────────────────────────────────
+function applyWeather(d){
+  weather=d;
+  document.getElementById('wicon').textContent=ICONS[d.condition]||'⛅';
+  document.getElementById('wtemp').textContent=Math.round(d.temp)+'°C';
+  document.getElementById('wdesc').textContent=d.desc;
+  document.getElementById('d-feels').textContent=Math.round(d.feels)+'°';
+  document.getElementById('d-hum').textContent=Math.round(d.humidity)+'%';
+  document.getElementById('d-wind').textContent=Math.round(d.wind);
+  document.getElementById('d-city').textContent=d.city||'--';
+  document.getElementById('status-txt').textContent='Clima actualizado · '+new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'});
+  drawBg();initParticles();
+}
+async function fetchWeather(){
+  const key=document.getElementById('api-input').value.trim();
+  if(!key){showToast('Ingresa tu API key');return;}
+  document.getElementById('status-txt').textContent='Consultando OpenWeatherMap...';
+  try{
+    const r=await fetch(`https://api.openweathermap.org/data/2.5/weather?q=Bogota,CO&appid=${key}&units=metric&lang=es`);
+    if(!r.ok){showToast('Error '+r.status+': revisa tu API key');return;}
+    const j=await r.json();
+    applyWeather({condition:mapCond(j.weather[0].id),temp:j.main.temp,feels:j.main.feels_like,humidity:j.main.humidity,wind:j.wind.speed*3.6,desc:j.weather[0].description,city:j.name});
+    showToast('Clima real cargado: '+j.name);
+  }catch(e){showToast('Error de conexión');}
+}
+async function locateMe(){
+  const key=document.getElementById('api-input').value.trim();
+  if(!key){showToast('Ingresa tu API key primero');return;}
+  if(!navigator.geolocation){showToast('Geolocalización no disponible');return;}
+  document.getElementById('status-txt').textContent='Detectando ubicación...';
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    try{
+      const r=await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&appid=${key}&units=metric&lang=es`);
+      const j=await r.json();
+      applyWeather({condition:mapCond(j.weather[0].id),temp:j.main.temp,feels:j.main.feels_like,humidity:j.main.humidity,wind:j.wind.speed*3.6,desc:j.weather[0].description,city:j.name});
+      showToast('Clima de tu ubicación: '+j.name);
+    }catch(e){showToast('Error al obtener clima');}
+  },()=>showToast('Permiso de ubicación denegado'));
+}
+function mapCond(id){
+  if(id>=200&&id<300) return 'thunderstorm';
+  if(id>=300&&id<600) return 'rain';
+  if(id>=600&&id<700) return 'snow';
+  if(id>=700&&id<800) return 'mist';
+  if(id===800) return 'clear';
+  if(id<=802) return 'partly_cloudy';
+  return 'clouds';
+}
+
+// ─── ALARMS ──────────────────────────────────────────────
+function renderAlarms(){
+  const list=document.getElementById('alarm-list');list.innerHTML='';
+  alarms.forEach(a=>{
+    const el=document.createElement('div');el.className='aitm glass';
+    el.innerHTML=`<div><div class="atm">${a.time}</div><div class="albl">${a.label}</div></div><div class="tog ${a.on?'on':''}" onclick="toggleAlarm(${a.id})"></div>`;
+    list.appendChild(el);
+  });
+}
+function toggleAlarm(id){const a=alarms.find(x=>x.id===id);if(a){a.on=!a.on;renderAlarms();}}
+function toggleAlarmForm(){
+  const f=document.getElementById('add-alarm-form');
+  f.classList.toggle('vis');
+  document.getElementById('btn-add').classList.toggle('on',f.classList.contains('vis'));
+}
+function closeAlarmForm(){
+  document.getElementById('add-alarm-form').classList.remove('vis');
+  document.getElementById('btn-add').classList.remove('on');
+}
+function saveAlarm(){
+  const t=document.getElementById('alarm-time-in').value;
+  const l=document.getElementById('alarm-label-in').value||'Alarma';
+  if(t){alarms.push({id:Date.now(),time:t,label:l,on:true});renderAlarms();}
+  closeAlarmForm();
+}
+
+// ─── UI TOGGLES ──────────────────────────────────────────
+function toggleFx(){fxOn=!fxOn;const b=document.getElementById('btn-fx');b.textContent='Efectos: '+(fxOn?'ON':'OFF');b.classList.toggle('on',fxOn);if(fxOn) initParticles();}
+function toggleFocus(){focusMode=!focusMode;document.getElementById('focus-ov').classList.toggle('vis',focusMode);document.getElementById('btn-focus').classList.toggle('on',focusMode);}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
+
+// ─── INIT ────────────────────────────────────────────────
+buildWeekStrip();
+renderAlarms();
+tick();
+setInterval(tick,1000);
+drawBg();
+initParticles();
+animateFx();
+setInterval(drawBg,60000);
+applyWeather(weather);
+window.addEventListener('resize',()=>{drawBg();initParticles();});
+</script>
+</body>
+</html>
